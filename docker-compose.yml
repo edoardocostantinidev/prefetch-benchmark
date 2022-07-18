@@ -1,26 +1,30 @@
 version: "3.8"
 services:
-  rust-consumer:
+  pb-consumer:
     build: .
     container_name: pb-consumer
     depends_on:
       - rabbitmq
     environment:
       ROLE: CONSUMER
-      PREFETCH_COUNT: 100
+      PREFETCH_COUNT: 1000
       WORKLOAD_TIME: 100
+      CONNECTION_STRING: amqp://guest:guest@rabbitmq:5672
+      NAME: C1
     networks:
           - pb-net
-  rust-producer:
+  pb-producer:
     build: .
     container_name: pb-producer
     depends_on:
       - rabbitmq
+      - pb-consumer
     environment:
       ROLE: PRODUCER
-      MESSAGE_COUNT: 100000
-      MESSAGE_LEN: 100
-      TIME_BETWEEN_MSG: 10
+      MESSAGE_COUNT: 1000
+      MESSAGE_LEN: 1000
+      TIME_BETWEEN_MSG: 1
+      CONNECTION_STRING: amqp://guest:guest@rabbitmq:5672
     networks:
           - pb-net
   rabbitmq:

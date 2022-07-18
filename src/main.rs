@@ -1,5 +1,8 @@
 use core::panic;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    thread::sleep,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use amiquip::{
     AmqpValue, Connection, ConsumerMessage, ConsumerOptions, Exchange, FieldTable, Publish,
@@ -8,28 +11,40 @@ use amiquip::{
 
 fn main() -> Result<(), String> {
     let role = std::env::var("ROLE").expect("you must set the ROLE variable");
+    let connection_string =
+        std::env::var("CONNECTION_STRING").expect("you must set the CONNECTION_STRING variable");
+    println!("I'm going to wait 30 seconds to let rabbitmq start");
+    sleep(Duration::from_millis(30000));
+    let mut connection = Connection::insecure_open(&connection_string)
+        .map_err(|e| format!("could not connect to rabbit {:?}", e))?;
 
-    let e = match role.as_str() {
-        "PRODUCER" => start_producing(),
-        "CONSUMER" => start_consuming(),
+    match role.as_str() {
+        "PRODUCER" => start_producing(&mut connection),
+        "CONSUMER" => start_consuming(&mut connection),
         _ => {
             panic!("ROLE variable must be either PRODUCER or CONSUMER");
         }
-    };
+    }
+    .map_err(|e| format!("Exiting... {:?}", e))?;
 
-    e.map_err(|e| format!("Exiting... {:?}", e))
+    connection
+        .close()
+        .map_err(|e| format!("could not close connection {:?}", e))?;
+
+    Ok(())
 }
 
-fn start_consuming() -> Result<(), amiquip::Error> {
+fn start_consuming(conn: &mut Connection) -> Result<(), amiquip::Error> {
     println!("starting consumer");
-    let mut connection = Connection::insecure_open("amqp://guest:guest@localhost:5672")?;
-    let channel = connection.open_channel(None)?;
+    let channel = conn.open_channel(None)?;
     let queue = channel.queue_declare("prefetch-test", QueueDeclareOptions::default())?;
 
     let prefetch_count = std::env::var("PREFETCH_COUNT")
         .expect("you must set a prefetch count for a consumer")
         .parse::<u32>()
         .expect("PREFETCH_COUNT must be a valid unsigned integer");
+
+    let consumer_name = std::env::var("NAME").expect("you must set a name for the consumer");
 
     let workload_time = std::env::var("WORKLOAD_TIME")
         .expect("you must set a workload time for a consumer")
@@ -55,9 +70,9 @@ fn start_consuming() -> Result<(), amiquip::Error> {
                     .expect("impossible to get here")
                     .as_millis();
                 let body = String::from_utf8_lossy(&delivery.body);
-                println!("{},{},{}", i, timestamp, body.len());
+                println!("{},{},{},{}", consumer_name, i, timestamp, body.len());
                 //simulate a workload
-                std::thread::sleep(Duration::from_millis(workload_time));
+                sleep(Duration::from_millis(workload_time));
                 consumer.ack(delivery)?;
             }
             other => {
@@ -66,13 +81,12 @@ fn start_consuming() -> Result<(), amiquip::Error> {
             }
         }
     }
-
-    connection.close()
+    Ok(())
 }
 
-fn start_producing() -> Result<(), amiquip::Error> {
-    let mut connection = Connection::insecure_open("amqp://guest:guest@localhost:5672")?;
-    let channel = connection.open_channel(None)?;
+fn start_producing(conn: &mut Connection) -> Result<(), amiquip::Error> {
+    println!("starting producer");
+    let channel = conn.open_channel(None)?;
     let exchange = Exchange::direct(&channel);
     let message_len = std::env::var("MESSAGE_LEN")
         .expect("you must set a message lenght for a producer")
@@ -86,17 +100,20 @@ fn start_producing() -> Result<(), amiquip::Error> {
         .expect("you must set a message count for a producer")
         .parse::<u64>()
         .expect("MESSAGE_COUNT must be a valid unsigned integer");
-    [0..messages_to_send].iter().for_each(|_| {
+    let mut messages_sent = 0;
+    loop {
+        let random_string = get_random_string(message_len);
+        println!("sending {random_string}");
         exchange
-            .publish(Publish::new(
-                get_random_string(message_len).as_bytes(),
-                "prefetch-test",
-            ))
+            .publish(Publish::new(random_string.as_bytes(), "prefetch-test"))
             .expect("error publishing");
-        std::thread::sleep(Duration::from_millis(time_between_sends));
-    });
-
-    connection.close()
+        sleep(Duration::from_millis(time_between_sends));
+        messages_sent += 1;
+        if messages_sent == messages_to_send {
+            break;
+        }
+    }
+    Ok(())
 }
 
 /// Generates a random string with a given lenght
