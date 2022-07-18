@@ -1,0 +1,40 @@
+version: "3.8"
+services:
+  rust-consumer:
+    build: .
+    container_name: pb-consumer
+    depends_on:
+      - rabbitmq
+    environment:
+      ROLE: CONSUMER
+      PREFETCH_COUNT: 100
+      WORKLOAD_TIME: 100
+    networks:
+          - pb-net
+  rust-producer:
+    build: .
+    container_name: pb-producer
+    depends_on:
+      - rabbitmq
+    environment:
+      ROLE: PRODUCER
+      MESSAGE_COUNT: 100000
+      MESSAGE_LEN: 100
+      TIME_BETWEEN_MSG: 10
+    networks:
+          - pb-net
+  rabbitmq:
+    image: rabbitmq:3.10-management-alpine
+    container_name: 'pb-rabbitmq'
+    ports:
+        - 5672:5672
+        - 15672:15672
+    volumes:
+        - ~/.docker-conf/rabbitmq/data/:/var/lib/rabbitmq/
+        - ~/.docker-conf/rabbitmq/log/:/var/log/rabbitmq
+    networks:
+        - pb-net
+
+networks:
+  pb-net:
+    driver: bridge
