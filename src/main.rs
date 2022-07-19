@@ -8,6 +8,7 @@ use amiquip::{
     AmqpValue, Connection, ConsumerMessage, ConsumerOptions, Exchange, FieldTable, Publish,
     QueueDeclareOptions,
 };
+use rand::{distributions::Alphanumeric, Rng};
 
 fn main() -> Result<(), String> {
     let role = std::env::var("ROLE").expect("you must set the ROLE variable");
@@ -103,7 +104,6 @@ fn start_producing(conn: &mut Connection) -> Result<(), amiquip::Error> {
     let mut messages_sent = 0;
     loop {
         let random_string = get_random_string(message_len);
-        println!("sending {random_string}");
         exchange
             .publish(Publish::new(random_string.as_bytes(), "prefetch-test"))
             .expect("error publishing");
@@ -118,8 +118,9 @@ fn start_producing(conn: &mut Connection) -> Result<(), amiquip::Error> {
 
 /// Generates a random string with a given lenght
 fn get_random_string(len: usize) -> String {
-    [0..len]
-        .iter()
-        .map(|_| rand::random::<char>())
-        .collect::<String>()
+    rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(len)
+        .map(char::from)
+        .collect()
 }

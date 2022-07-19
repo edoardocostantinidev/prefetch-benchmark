@@ -8,7 +8,7 @@ services:
     environment:
       ROLE: CONSUMER
       PREFETCH_COUNT: 1000
-      WORKLOAD_TIME: 100
+      WORKLOAD_TIME: 0
       CONNECTION_STRING: amqp://guest:guest@rabbitmq:5672
       NAME: C1
     networks:
@@ -23,7 +23,7 @@ services:
       ROLE: PRODUCER
       MESSAGE_COUNT: 1000
       MESSAGE_LEN: 1000
-      TIME_BETWEEN_MSG: 1
+      TIME_BETWEEN_MSG: 0
       CONNECTION_STRING: amqp://guest:guest@rabbitmq:5672
     networks:
           - pb-net
@@ -38,6 +38,22 @@ services:
         - ~/.docker-conf/rabbitmq/log/:/var/log/rabbitmq
     networks:
         - pb-net
+  wireshark:
+    image: lscr.io/linuxserver/wireshark:latest
+    container_name: wireshark
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+    volumes:
+      - ./config:/config
+    ports:
+      - 3000:3000 #optional
+    restart: unless-stopped
+    networks:
+      - pb-net
 
 networks:
   pb-net:
