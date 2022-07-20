@@ -61,19 +61,28 @@ fn start_consuming(conn: &mut Connection) -> Result<(), amiquip::Error> {
         arguments: arguments,
         ..Default::default()
     })?;
-    println!("Waiting for messages. Press Ctrl-C to exit.");
-
+    let ts = std::time::Instant::now();
     for (i, message) in consumer.receiver().iter().enumerate() {
         match message {
             ConsumerMessage::Delivery(delivery) => {
-                let timestamp = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("impossible to get here")
-                    .as_millis();
                 let body = String::from_utf8_lossy(&delivery.body);
-                println!("{},{},{},{}", consumer_name, i, timestamp, body.len());
-                //simulate a workload
-                sleep(Duration::from_millis(workload_time));
+                match body.as_ref() {
+                    "start" => {
+                        println!("start,{},{},{}", consumer_name, i, ts.elapsed().as_millis());
+                    }
+                    "done" => {
+                        println!(
+                            "end,{},{},{}",
+                            consumer_name,
+                            i - 1,
+                            ts.elapsed().as_millis()
+                        );
+                        break;
+                    }
+                    _ => {
+                        sleep(Duration::from_millis(workload_time));
+                    }
+                }
                 consumer.ack(delivery)?;
             }
             other => {
@@ -82,7 +91,10 @@ fn start_consuming(conn: &mut Connection) -> Result<(), amiquip::Error> {
             }
         }
     }
-    Ok(())
+    println!("DONE!");
+    loop {
+        sleep(Duration::from_millis(1000));
+    }
 }
 
 fn start_producing(conn: &mut Connection) -> Result<(), amiquip::Error> {
@@ -102,18 +114,22 @@ fn start_producing(conn: &mut Connection) -> Result<(), amiquip::Error> {
         .parse::<u64>()
         .expect("MESSAGE_COUNT must be a valid unsigned integer");
     let mut messages_sent = 0;
+    exchange.publish(Publish::new("start".as_bytes(), "prefetch-test"))?;
+
     loop {
         let random_string = get_random_string(message_len);
-        exchange
-            .publish(Publish::new(random_string.as_bytes(), "prefetch-test"))
-            .expect("error publishing");
+        exchange.publish(Publish::new(random_string.as_bytes(), "prefetch-test"))?;
         sleep(Duration::from_millis(time_between_sends));
         messages_sent += 1;
         if messages_sent == messages_to_send {
             break;
         }
     }
-    Ok(())
+    exchange.publish(Publish::new("done".as_bytes(), "prefetch-test"))?;
+    println!("DONE!");
+    loop {
+        sleep(Duration::from_millis(1000));
+    }
 }
 
 /// Generates a random string with a given lenght
