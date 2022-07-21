@@ -9,7 +9,7 @@ services:
       - tc
     environment:
       ROLE: CONSUMER
-      PREFETCH_COUNT: 10
+      PREFETCH_COUNT: 1
       WORKLOAD_TIME: 100
       CONNECTION_STRING: amqp://guest:guest@rabbitmq:5672
       NAME: C1
