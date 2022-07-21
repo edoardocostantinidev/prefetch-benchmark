@@ -6,12 +6,16 @@ services:
     build: .
     depends_on:
       - rabbitmq
+      - tc
     environment:
       ROLE: CONSUMER
-      PREFETCH_COUNT: 1
-      WORKLOAD_TIME: 1000
+      PREFETCH_COUNT: 10
+      WORKLOAD_TIME: 100
       CONNECTION_STRING: amqp://guest:guest@rabbitmq:5672
       NAME: C1
+    labels:
+      com.docker-tc.enabled: 1
+      com.docker-tc.delay: "50ms"
     networks:
           - pb-net
   pb-producer:
@@ -22,7 +26,7 @@ services:
       - pb-consumer
     environment:
       ROLE: PRODUCER
-      MESSAGE_COUNT: 30
+      MESSAGE_COUNT: 300
       MESSAGE_LEN: 5000
       TIME_BETWEEN_MSG: 0
       CONNECTION_STRING: amqp://guest:guest@rabbitmq:5672
@@ -39,7 +43,20 @@ services:
     #     - ~/.docker-conf/rabbitmq/log/:/var/log/rabbitmq
     networks:
         - pb-net
-
+  tc:
+    image: "lukaszlach/docker-tc"
+    container_name: docker-tc
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/docker-tc:/var/docker-tc
+    deploy:
+      mode: global
+    environment:
+      HTTP_BIND: 127.0.0.1
+      HTTP_PORT: 4080
+    network_mode: host
 networks:
   pb-net:
     driver: bridge
