@@ -85,7 +85,7 @@ fn start_consuming(conn: &mut Connection) -> Result<(), amiquip::Error> {
                 match body.as_ref() {
                     _ => {
                         sleep(Duration::from_millis(workload_time));
-                        println!("{},{}", i + 1, ts.elapsed().as_millis());
+                        println!("{},{}", i + 1, ts.elapsed().as_micros());
                     }
                 }
 
