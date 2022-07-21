@@ -1,14 +1,15 @@
 version: "3.8"
 services:
   pb-consumer:
+    deploy:
+      replicas: 1
     build: .
-    scale: 3
     depends_on:
       - rabbitmq
     environment:
       ROLE: CONSUMER
-      PREFETCH_COUNT: 300
-      WORKLOAD_TIME: 10
+      PREFETCH_COUNT: 100
+      WORKLOAD_TIME: 0
       CONNECTION_STRING: amqp://guest:guest@rabbitmq:5672
       NAME: C1
     networks:
@@ -21,10 +22,9 @@ services:
       - pb-consumer
     environment:
       ROLE: PRODUCER
-      MESSAGE_COUNT: 10000
+      MESSAGE_COUNT: 1000
       MESSAGE_LEN: 1000
       TIME_BETWEEN_MSG: 0
-      CONSUMER_COUNT: 3
       CONNECTION_STRING: amqp://guest:guest@rabbitmq:5672
     networks:
           - pb-net

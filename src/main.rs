@@ -2,8 +2,8 @@ use core::panic;
 use std::{thread::sleep, time::Duration};
 
 use amiquip::{
-    Connection, ConsumerMessage, ConsumerOptions, Exchange, ExchangeDeclareOptions, ExchangeType,
-    FieldTable, Publish, QueueDeclareOptions,
+    Connection, ConsumerMessage, ConsumerOptions, ExchangeDeclareOptions, ExchangeType, FieldTable,
+    Publish, QueueDeclareOptions,
 };
 use rand::{distributions::Alphanumeric, Rng};
 
@@ -48,26 +48,15 @@ fn start_consuming(conn: &mut Connection) -> Result<(), amiquip::Error> {
         .expect("you must set a prefetch count for a consumer")
         .parse::<u16>()
         .expect("PREFETCH_COUNT must be a valid unsigned integer");
-    let consumer_name = std::env::var("NAME").expect("you must set a name for the consumer");
     let workload_time = std::env::var("WORKLOAD_TIME")
         .expect("you must set a workload time for a consumer")
         .parse::<u64>()
         .expect("WORKLOAD_TIME must be a valid unsigned integer");
     sleep(Duration::from_secs(3));
     let channel = conn.open_channel(None)?;
-    let queue = channel.queue_declare(
-        "prefetch-test",
-        QueueDeclareOptions {
-            durable: false,
-            exclusive: false,
-            auto_delete: false,
-            arguments: FieldTable::default(),
-        },
-    )?;
 
-    channel.qos(0, prefetch_count, false)?;
-    let commands_queue = channel.queue_declare(
-        "commands",
+    let prefetch_benchmark_queue = channel.queue_declare(
+        "prefetch-queue", //get_random_string(8),
         QueueDeclareOptions {
             durable: false,
             exclusive: false,
@@ -77,49 +66,29 @@ fn start_consuming(conn: &mut Connection) -> Result<(), amiquip::Error> {
     )?;
 
     channel.queue_bind(
-        "commands",
-        "commands-exchange",
-        "commands",
+        prefetch_benchmark_queue.name(),
+        "prefetch-benchmark-exchange",
+        "ignored",
         FieldTable::default(),
     )?;
-    let command_consumer = commands_queue.consume(ConsumerOptions::default())?;
-    for (_, msg) in command_consumer.receiver().iter().enumerate() {
-        match msg {
-            ConsumerMessage::Delivery(d) => {
-                let body = String::from_utf8_lossy(&d.body);
-                match body.as_ref() {
-                    "start" => {
-                        println!("starting consume");
-                        break;
-                    }
-                    wtf => {
-                        println!("{wtf}");
-                    }
-                }
-            }
-            other => {
-                println!("Consumer ended: {:?}", other);
-                break;
-            }
-        }
-    }
+
+    channel.qos(0, prefetch_count, false)?;
 
     sleep(Duration::from_secs(5));
-    let consumer = queue.consume(ConsumerOptions::default())?;
+    let consumer = prefetch_benchmark_queue.consume(ConsumerOptions::default())?;
     let ts = std::time::Instant::now();
+
     for (i, message) in consumer.receiver().iter().enumerate() {
         match message {
             ConsumerMessage::Delivery(delivery) => {
                 let body = String::from_utf8_lossy(&delivery.body);
                 match body.as_ref() {
-                    "done" => {
-                        println!("end,{},{}", i, ts.elapsed().as_millis());
-                        break;
-                    }
                     _ => {
                         sleep(Duration::from_millis(workload_time));
+                        println!("{},{}", i, ts.elapsed().as_millis());
                     }
                 }
+
                 consumer.ack(delivery)?;
             }
             other => {
@@ -135,15 +104,16 @@ fn start_consuming(conn: &mut Connection) -> Result<(), amiquip::Error> {
 fn start_producing(conn: &mut Connection) -> Result<(), amiquip::Error> {
     println!("starting producer");
     let channel = conn.open_channel(None)?;
-    let exchange = Exchange::direct(&channel);
-    let fan_out = channel.exchange_declare(
+    let exchange = channel.exchange_declare(
         ExchangeType::Fanout,
-        "commands-exchange",
+        "prefetch-benchmark-exchange",
         ExchangeDeclareOptions {
+            durable: false,
             auto_delete: false,
             ..Default::default()
         },
     )?;
+
     let message_len = std::env::var("MESSAGE_LEN")
         .expect("you must set a message lenght for a producer")
         .parse::<usize>()
@@ -156,10 +126,6 @@ fn start_producing(conn: &mut Connection) -> Result<(), amiquip::Error> {
         .expect("you must set a message count for a producer")
         .parse::<u64>()
         .expect("MESSAGE_COUNT must be a valid unsigned integer");
-    let consumer_count = std::env::var("CONSUMER_COUNT")
-        .expect("you must set a message count for a producer")
-        .parse::<u64>()
-        .expect("MESSAGE_COUNT must be a valid unsigned integer");
     let mut messages_sent = 1;
     let message = get_random_string(message_len);
     sleep(Duration::from_secs(5));
@@ -169,12 +135,6 @@ fn start_producing(conn: &mut Connection) -> Result<(), amiquip::Error> {
         messages_sent += 1;
         sleep(Duration::from_millis(time_between_sends));
     }
-
-    for _ in [0..consumer_count] {
-        exchange.publish(Publish::new("done".as_bytes(), "prefetch-test"))?;
-        fan_out.publish(Publish::new("start".as_bytes(), "prefetch-test"))?;
-    }
-
     println!("DONE producing!");
     loop {
         sleep(Duration::from_millis(1000));
