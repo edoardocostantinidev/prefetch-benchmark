@@ -21,9 +21,10 @@ services:
       - pb-consumer
     environment:
       ROLE: PRODUCER
-      MESSAGE_COUNT: 300
+      MESSAGE_COUNT: 10000
       MESSAGE_LEN: 1000
       TIME_BETWEEN_MSG: 0
+      CONSUMER_COUNT: 3
       CONNECTION_STRING: amqp://guest:guest@rabbitmq:5672
     networks:
           - pb-net

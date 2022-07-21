@@ -1,12 +1,9 @@
 use core::panic;
-use std::{
-    thread::sleep,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::{thread::sleep, time::Duration};
 
 use amiquip::{
-    AmqpValue, Connection, ConsumerMessage, ConsumerOptions, Exchange, ExchangeDeclareOptions,
-    ExchangeType, FieldTable, Publish, QueueDeclareOptions,
+    Connection, ConsumerMessage, ConsumerOptions, Exchange, ExchangeDeclareOptions, ExchangeType,
+    FieldTable, Publish, QueueDeclareOptions,
 };
 use rand::{distributions::Alphanumeric, Rng};
 
@@ -56,7 +53,7 @@ fn start_consuming(conn: &mut Connection) -> Result<(), amiquip::Error> {
         .expect("you must set a workload time for a consumer")
         .parse::<u64>()
         .expect("WORKLOAD_TIME must be a valid unsigned integer");
-
+    sleep(Duration::from_secs(3));
     let channel = conn.open_channel(None)?;
     let queue = channel.queue_declare(
         "prefetch-test",
@@ -93,6 +90,7 @@ fn start_consuming(conn: &mut Connection) -> Result<(), amiquip::Error> {
                 match body.as_ref() {
                     "start" => {
                         println!("starting consume");
+                        break;
                     }
                     wtf => {
                         println!("{wtf}");
@@ -114,11 +112,8 @@ fn start_consuming(conn: &mut Connection) -> Result<(), amiquip::Error> {
             ConsumerMessage::Delivery(delivery) => {
                 let body = String::from_utf8_lossy(&delivery.body);
                 match body.as_ref() {
-                    "start" => {
-                        println!("start,{},{},{}", consumer_name, i, ts.elapsed().as_millis());
-                    }
                     "done" => {
-                        println!("end,{},{},{}", consumer_name, i, ts.elapsed().as_millis());
+                        println!("end,{},{}", i, ts.elapsed().as_millis());
                         break;
                     }
                     _ => {
@@ -143,7 +138,7 @@ fn start_producing(conn: &mut Connection) -> Result<(), amiquip::Error> {
     let exchange = Exchange::direct(&channel);
     let fan_out = channel.exchange_declare(
         ExchangeType::Fanout,
-        "commands",
+        "commands-exchange",
         ExchangeDeclareOptions {
             auto_delete: false,
             ..Default::default()
@@ -161,9 +156,13 @@ fn start_producing(conn: &mut Connection) -> Result<(), amiquip::Error> {
         .expect("you must set a message count for a producer")
         .parse::<u64>()
         .expect("MESSAGE_COUNT must be a valid unsigned integer");
+    let consumer_count = std::env::var("CONSUMER_COUNT")
+        .expect("you must set a message count for a producer")
+        .parse::<u64>()
+        .expect("MESSAGE_COUNT must be a valid unsigned integer");
     let mut messages_sent = 1;
     let message = get_random_string(message_len);
-    sleep(Duration::from_secs(3));
+    sleep(Duration::from_secs(5));
 
     while messages_to_send >= messages_sent {
         exchange.publish(Publish::new(message.as_bytes(), "prefetch-test"))?;
@@ -171,8 +170,10 @@ fn start_producing(conn: &mut Connection) -> Result<(), amiquip::Error> {
         sleep(Duration::from_millis(time_between_sends));
     }
 
-    exchange.publish(Publish::new("done".as_bytes(), "prefetch-test"))?;
-    fan_out.publish(Publish::new("start".as_bytes(), "prefetch-test"))?;
+    for _ in [0..consumer_count] {
+        exchange.publish(Publish::new("done".as_bytes(), "prefetch-test"))?;
+        fan_out.publish(Publish::new("start".as_bytes(), "prefetch-test"))?;
+    }
 
     println!("DONE producing!");
     loop {
