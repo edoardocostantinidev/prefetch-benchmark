@@ -2,7 +2,9 @@ version: "3.8"
 services:
   pb-consumer:
     deploy:
-      replicas: 30
+      replicas: 50
+      
+        
     build: .
     depends_on:
       - rabbitmq
@@ -10,7 +12,7 @@ services:
     environment:
       ROLE: CONSUMER
       #PREFETCH_COUNT: 50
-      CONSUMER_COUNT: 30
+      CONSUMER_COUNT: 50
       MESSAGE_COUNT: 300
       WORKLOAD_TIME: 100
       CONNECTION_STRING: amqp://guest:guest@rabbitmq:5672
