@@ -1,5 +1,5 @@
 use core::panic;
-use std::{thread::sleep, time::Duration};
+use std::{env::VarError, thread::sleep, time::Duration};
 
 use amiquip::{
     Connection, ConsumerMessage, ConsumerOptions, ExchangeDeclareOptions, ExchangeType, FieldTable,
@@ -44,14 +44,12 @@ fn main() -> Result<(), String> {
 fn start_consuming(conn: &mut Connection) -> Result<(), amiquip::Error> {
     println!("starting consumer");
 
-    let prefetch_count = std::env::var("PREFETCH_COUNT")
-        .expect("you must set a prefetch count for a consumer")
-        .parse::<u16>()
-        .expect("PREFETCH_COUNT must be a valid unsigned integer");
+    let prefetch_count_var = std::env::var("PREFETCH_COUNT");
     let workload_time = std::env::var("WORKLOAD_TIME")
         .expect("you must set a workload time for a consumer")
         .parse::<u64>()
         .expect("WORKLOAD_TIME must be a valid unsigned integer");
+    let prefetch_count = get_prefetch_count(prefetch_count_var);
     sleep(Duration::from_secs(3));
     let channel = conn.open_channel(None)?;
 
@@ -71,13 +69,12 @@ fn start_consuming(conn: &mut Connection) -> Result<(), amiquip::Error> {
         "ignored",
         FieldTable::default(),
     )?;
-
     channel.qos(0, prefetch_count, false)?;
-
     sleep(Duration::from_secs(5));
     let consumer = prefetch_benchmark_queue.consume(ConsumerOptions::default())?;
-    let ts = std::time::Instant::now();
+    println!("set prefetch count to: {prefetch_count}");
 
+    let ts = std::time::Instant::now();
     for (i, message) in consumer.receiver().iter().enumerate() {
         match message {
             ConsumerMessage::Delivery(delivery) => {
@@ -91,6 +88,7 @@ fn start_consuming(conn: &mut Connection) -> Result<(), amiquip::Error> {
 
                 consumer.ack(delivery)?;
             }
+
             other => {
                 println!("Consumer ended: {:?}", other);
                 break;
@@ -99,6 +97,24 @@ fn start_consuming(conn: &mut Connection) -> Result<(), amiquip::Error> {
     }
     println!("DONE!");
     Ok(())
+}
+
+fn get_prefetch_count(prefetch_count_var: Result<String, VarError>) -> u16 {
+    match prefetch_count_var {
+        Ok(var) => var
+            .parse::<u16>()
+            .expect("PREFETCH_COUNT must be a valid unsigned integer"),
+        _ => {
+            let prefetch_params = (
+                std::env::var("MESSAGE_COUNT").expect("if no prefetch_count is set, you must provide both MESSAGE_COUNT and CONSUMER_COUNT").parse::<u16>().expect("MESSAGE_COUNT must be a valid integer"),
+                std::env::var("CONSUMER_COUNT").expect("if no prefetch_count is set, you must provide both MESSAGE_COUNT and CONSUMER_COUNT").parse::<u16>().expect("CONSUMER_COUNT must be a valid integer"),
+            );
+            match prefetch_params {
+                (0, _) | (_, 0) => 1,
+                (message_count, consumer_count) => message_count / consumer_count,
+            }
+        }
+    }
 }
 
 fn start_producing(conn: &mut Connection) -> Result<(), amiquip::Error> {
